@@ -1,0 +1,60 @@
+#!/usr/bin/groovy
+
+pipeline {
+    agent {label 'master'}
+
+    options {
+        disableConcurrentBuilds()
+    }
+
+    environment {
+	PYTHONPATH = "${WORKSPACE}/"
+    }
+
+    stages {
+        stage("Integration - Install") {
+		steps { integration() }
+	}
+	stage("Integration - Test") {
+		steps { runUAT("sophora-103.man.poznan.pl", "https") }
+	}
+        stage("Approve for Production") {
+		steps { approve() }
+	}
+        stage("Deployment - Install") {
+		steps { deploy() }
+	}
+	stage("Deployment - Test") {
+		steps { runUAT("cloudify.hidalgo-project.eu", "https") }
+	}
+    }
+}
+
+def integration() {
+	sh "ansible-playbook -i Jenkins/Inventory/cloudify_integration.INI ./cloudify-integration.yml --vault-password-file=~/HiDALGO/VaultPassword/cloudify_vault.txt"
+}
+
+def deploy() {
+	sh "ansible-playbook -i Jenkins/Inventory/cloudify.INI ./cloudify-deployment.yml --vault-password-file=~/HiDALGO/VaultPassword/cloudify_vault.txt"
+}
+
+def approve() {
+        try {
+                timeout(time:1, unit:'DAYS') {
+                        input('Do you want to deploy to live?')
+                }
+        } catch(err) {
+                def user = err.getCauses()[0].getUser()
+                if('SYSTEM' == user.toString()) { // SYSTEM means timeout.
+                        didTimeout = true
+                } else {
+                        userInput = false
+                        echo "Aborted by: [${user}]"
+                }
+        }
+
+}
+
+def runUAT(hostname, protocol) {
+	sh "Tests/ping_cloudify.sh ${hostname} ${protocol}"
+}

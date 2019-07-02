@@ -23,14 +23,14 @@
     name: '{{ repo_cloudify_manager_url }}'
     state: present
 
-- name: shutdown the cfy_manager
-  command: cfy_manager stop --force
-  ignore_errors: yes
-
 - name: Install epel-release package
   yum: name={{item}} state=present
   with_items:
     - epel-release
+
+- name: shutdown the cfy_manager
+  command: cfy_manager stop --force
+  ignore_errors: yes
 
 - name: Setup ssl in /etc/cloudify/config.yaml
   replace:
@@ -50,7 +50,7 @@
     - certbot-nginx
 
 - name: Letsencrypt to create a certificate
-  command: certbot --email hpcdraja@hlrs.de --redirect  --nginx -d {{www_host}} -d {{www_host_alias}} --agree-tos --noninteractive
+  command: certbot --email hpcdraja@hlrs.de --redirect  --nginx -d {{www_host}} --agree-tos --noninteractive
   ignore_errors: yes
 
 - name: Setup ssl in /etc/cloudify/config.yaml

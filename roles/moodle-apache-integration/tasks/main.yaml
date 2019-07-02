@@ -1,0 +1,220 @@
+---
+- name: Create domain specific directory
+  file:
+    dest: "{{www_root}}"
+    state: directory
+    mode: '0755'
+
+# ======= letsencrypt =======
+
+# - name: Upgrade system
+#   apt: upgrade=dist update_cache=yes
+
+# - name: install letsencrypt
+#   apt: name=letsencrypt state=latest
+
+# - name: Create letsencrypt certificate
+#   shell: "letsencrypt certonly {% if not letsencrypt_real_cert %}--staging {%endif%}-n --webroot -w {{ www_root }} -m {{ letsencrypt_email }} --agree-tos -d {{ www_host }}"
+#   args:
+#     creates: "/etc/letsencrypt/live/{{ www_host }}"
+
+# - name: Generate dhparams
+#   shell: openssl dhparam -out /etc/nginx/dhparams.pem 2048
+#   args:
+#     creates: /etc/nginx/dhparams.pem
+
+# - name: Reload nginx to activate specified site
+#   service: name=nginx state=restarted
+
+# - name: Add letsencrypt cronjob for cert renewal
+#   cron:
+#     name: letsencrypt_renewal
+#     special_time: weekly
+#     job: "letsencrypt --renew certonly {% if not letsencrypt_real_cert %}--staging {%endif%}-n --webroot -w {{ www_root }} -m {{ letsencrypt_email }} --agree-tos -d {{ www_host }} && service nginx reload"
+
+# ======= endof letsencrypt =======
+
+
+- name: Install git
+  apt:
+    name: git
+    state: present
+
+- name: Install list of dependency
+  apt: name={{item}} state=present
+  with_items:
+    - graphviz
+    - aspell
+    - ghostscript
+    - clamav
+
+- name: Install Apache
+  apt: name={{item}} state=present
+  with_items:
+    - apache2
+    - libapache2-mod-php7.2
+
+- name: Install Certbot
+  apt: name={{item}} state=present
+  with_items:
+    - python-certbot-apache
+
+- name: Create apache config for the specific domain
+  template:
+    src: apache2_virtualhost.conf.j2
+    dest: "/etc/apache2/sites-available/{{www_host}}.conf"
+
+- name: Create apache ssl config for the specific domain
+  template:
+    src: apache2_virtualhost_ssl.conf.j2
+    dest: "/etc/apache2/sites-available/{{www_host}}-le-ssl.conf"
+
+- name: Check 000-default.conf stat
+  stat:
+    path: /etc/apache2/sites-available/000-default.conf
+  register: result_000_default
+
+- name: a2dissite 000-default.conf
+  command: a2dissite 000-default.conf
+  when: result_000_default.stat.exists
+
+- name: Check 000-default-le-ssl.conf stat
+  stat:
+    path: /etc/apache2/sites-available/000-default-le-ssl.conf
+  register: result_000_default_le_ssl
+
+- name: a2dissite 000-default-le-ssl.conf
+  command: a2dissite 000-default-le-ssl.conf
+  when: result_000_default_le_ssl.stat.exists
+
+- name: Check default-ssl.conf stat
+  stat:
+    path: /etc/apache2/sites-available/default-ssl.conf
+  register: result_default_ssl
+
+- name: a2dissite default-ssl.conf
+  command: a2dissite default-ssl.conf
+  when: result_default_ssl.stat.exists
+
+- name: a2ensite {{www_host}}.conf
+  command: a2ensite {{www_host}}.conf
+
+- name: a2ensite {{www_host}}-le-ssl.conf
+  command: a2ensite {{www_host}}-le-ssl.conf
+
+- name: Letsencrypt to create a certificate
+  command: certbot --email hpcdraja@hlrs.de --redirect  --apache -d {{www_host}} -d {{www_host_alias1}} -d {{www_host_alias2}} --agree-tos --noninteractive
+
+- name: a2ensite {{www_host}}.conf
+  command: a2ensite {{www_host}}.conf
+
+- name: a2ensite {{www_host}}-le-ssl.conf
+  command: a2ensite {{www_host}}-le-ssl.conf
+
+- name: Check 000-default.conf stat
+  stat:
+    path: /etc/apache2/sites-available/000-default.conf
+  register: result_000_default
+
+- name: a2dissite 000-default.conf
+  command: a2dissite 000-default.conf
+  when: result_000_default.stat.exists
+
+- name: Check 000-default-le-ssl.conf stat
+  stat:
+    path: /etc/apache2/sites-available/000-default-le-ssl.conf
+  register: result_000_default_le_ssl
+
+- name: a2dissite 000-default-le-ssl.conf
+  command: a2dissite 000-default-le-ssl.conf
+  when: result_000_default_le_ssl.stat.exists
+
+- name: Check default-ssl.conf stat
+  stat:
+    path: /etc/apache2/sites-available/default-ssl.conf
+  register: result_default_ssl
+
+- name: a2dissite default-ssl.conf
+  command: a2dissite default-ssl.conf
+  when: result_default_ssl.stat.exists
+
+- name: apache2ctl configtest
+  command: apache2ctl configtest
+
+- name: Install PHP and Its dependencies
+  apt: name={{item}} state=present
+  with_items:
+    - php7.2
+    - php7.2-mysql
+    - php7.2-curl
+    - php7.2-zip
+    - php7.2-xml
+    - php7.2-mbstring
+    - php7.2-xmlrpc
+    - php7.2-soap
+    - php7.2-gd
+    - php7.2-intl
+    - php7.2-ldap
+    - php7.2-pspell
+
+- name: Checkout moodle
+  git:
+    repo: https://{{git_username}}:{{git_password}}@scm.projects.hlrs.de/authscm/hidalgo-ro-dep/git/hid-portal-be/moodle.git
+    dest: "{{www_root}}"
+    version: "MOODLE_{{moodle_git_version}}_STABLE"
+    force: yes
+    clone: yes
+
+- name: Change Mysql config
+  lineinfile:
+    path: /etc/mysql/mysql.conf.d/mysqld.cnf
+    regexp: 'default_storage_engine'
+    line: '#default_storage_engine'
+    regexp: 'innodb_file_per_table'
+    line: '#innodb_file_per_table'
+    regexp: 'innodb_file_format'
+    line: '#innodb_file_format'
+
+- name: Change Mysql config
+  blockinfile:
+    dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+    block: |
+      default_storage_engine = innodb
+      innodb_file_per_table = 1
+      innodb_file_format = Barracuda
+    backup: yes
+
+- name: Create database for Moodle
+  mysql_db:
+    name: "{{moodle_db_name}}"
+    encoding: utf8mb4
+    collation: utf8mb4_unicode_ci
+
+- name: Create db user
+  mysql_user:
+    name: "{{moodle_db_user}}"
+    password: "{{moodle_db_pass}}"
+    priv: "{{moodle_db_name}}.*:SELECT,INSERT,UPDATE,DELETE,CREATE,CREATE TEMPORARY TABLES,DROP,INDEX,ALTER"
+    host: localhost
+
+- name: Create data_dir
+  file:
+    dest: "{{moodle_data_dir}}"
+    state: directory
+    owner: "{{php_fpm_pool_user}}"
+
+- name: Create config.php
+  template:
+    src: moodle-config.php.j2
+    dest: "{{www_root}}/config.php"
+
+- name: Change Apache2 7.2 config
+  lineinfile:
+    path: /etc/php/7.2/apache2/php.ini
+    regexp: ';extension=mysqli'
+    line: extension=mysqli
+
+- name: Restart Apache2 service
+  service:
+    name: apache2
+    state: restarted

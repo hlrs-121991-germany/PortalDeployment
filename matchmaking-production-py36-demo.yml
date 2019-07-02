@@ -1,0 +1,8 @@
+---
+- hosts: all
+  become: yes
+  become_method: sudo
+  roles:
+    - upload_public_key
+    - fix_sources
+    - matchmaking_py36_demo

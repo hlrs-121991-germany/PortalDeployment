@@ -1,0 +1,95 @@
+#!/usr/bin/groovy
+
+pipeline {
+	agent {label 'master'}
+
+	options {
+		disableConcurrentBuilds()
+	}
+
+	environment {
+		PYTHONPATH = "${WORKSPACE}/"
+	}
+
+	stages {
+
+		stage("Integration - Install") {
+			steps { integration() }
+		}
+
+		stage("Integration - Test") {
+			steps { runUAT("sophora-102.man.poznan.pl", "https") }
+		}
+
+
+		stage("Approve") {
+			steps { approve() }
+		}
+
+		stage("Production - Install") {
+			steps { deploy() }
+		}
+
+		stage("Production - Test") {
+			steps { runUAT("moodle.hidalgo-project.eu", "https") }
+		}
+
+	}
+}
+
+def integration() {
+        sh "ansible-playbook -i Jenkins/Inventory/moodle_integration.INI ./moodle-integration.yml --vault-password-file=~/HiDALGO/VaultPassword/moodle_vault.txt"
+}
+
+def deploy() {
+        sh "ansible-playbook -i Jenkins/Inventory/moodle.INI ./moodle-deployment.yml --vault-password-file=~/HiDALGO/VaultPassword/moodle_vault.txt"
+}
+
+/* def deploy(environment) {
+
+	def hostName = ''
+	def port = ''
+
+	if ("${environment}" == 'integration') {
+		hostName = "192.168.80.103"
+		port = "8080"
+	}
+	else if ("${environment}" == 'production') {
+		hostName = "192.168.80.103"
+		port = "8081"
+	}
+	else {
+		println "Environment not valid"
+		System.exit(0)
+	}
+	sh "pwd"
+	sh "whoami"
+	sh "hostname"
+	sh "ping -c 4 ${hostName}"
+	sh "ansible-playbook -i Jenkins/Inventory/moodle.INI ./moodle-dev-integration.yml -e hostName=${hostName} -e Port1=${port}"
+
+	//sh "docker run -d -p ${port}:5000 --name ${containerName} hands-on-jenkins/myapp:${BUILD_NUMBER}"
+
+} */
+
+def approve() {
+
+        try {
+                timeout(time:1, unit:'DAYS') {
+                        input('Do you want to deploy to live?')
+                }
+        } catch(err) {
+                def user = err.getCauses()[0].getUser()
+                if('SYSTEM' == user.toString()) { // SYSTEM means timeout.
+                        didTimeout = true
+                } else {
+                        userInput = false
+                        echo "Aborted by: [${user}]"
+                }
+        }
+
+}
+
+def runUAT(hostname, protocol) {
+	sh "Tests/ping_moodle.sh ${hostname} ${protocol}"
+}

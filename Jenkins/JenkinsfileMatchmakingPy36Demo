@@ -1,0 +1,61 @@
+#!/usr/bin/groovy
+
+pipeline {
+    agent {label 'master'}
+
+    options {
+        disableConcurrentBuilds()
+    }
+
+    environment {
+	PYTHONPATH = "${WORKSPACE}/"
+    }
+
+    stages {
+        stage("Integration - Install") {
+		steps { deploy() }
+	}
+	stage("Integration - Test") {
+		steps { runUAT("sophora-89.man.poznan.pl", "http") }
+	}
+        stage("Approve for Production") {
+		steps { approve() }
+	}
+        stage("Deploy - Install") {
+		steps { deploy() }
+	}
+	stage("Deploy - Test") {
+		steps { runUAT("172.18.18.8", "http") }
+	}
+    }
+}
+
+def integrate() {
+	sh "ansible-playbook -i Jenkins/Inventory/matchmaking_integration.INI ./matchmaking-integration-py36-demo.yml -e 'ansible_python_interpreter=/usr/bin/python3' --vault-password-file=~/HiDALGO/VaultPassword/matchmaking_vault.txt"
+}
+
+def deploy() {
+	sh "ansible-playbook -i Jenkins/Inventory/matchmaking.INI ./matchmaking-production-py36-demo.yml -e 'ansible_python_interpreter=/usr/bin/python3' --vault-password-file=~/HiDALGO/VaultPassword/matchmaking_vault.txt"
+}
+
+def runUAT(hostname, protocol) {
+	sh "Tests/ping_matchmaking.sh ${hostname} ${protocol}"
+}
+
+def approve() {
+
+        try {
+                timeout(time:1, unit:'DAYS') {
+                        input('Do you want to deploy to live?')
+                }
+        } catch(err) {
+                def user = err.getCauses()[0].getUser()
+                if('SYSTEM' == user.toString()) { // SYSTEM means timeout.
+                        didTimeout = true
+                } else {
+                        userInput = false
+                        echo "Aborted by: [${user}]"
+                }
+        }
+
+}

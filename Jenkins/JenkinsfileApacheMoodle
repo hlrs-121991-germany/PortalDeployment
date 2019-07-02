@@ -1,0 +1,59 @@
+#!/usr/bin/groovy
+
+pipeline {
+    agent {label 'master'}
+
+    options {
+        disableConcurrentBuilds()
+    }
+
+	environment {
+		PYTHONPATH = "${WORKSPACE}/"
+	}
+
+    stages {
+
+        stage("Deploy - Integration") {
+            steps { deploy('integration') }
+		}
+
+		stage("Test - Integration") {
+            steps { runUAT("moodle.hidalgo-project.eu", "https") }
+		}
+
+
+        stage("Approve for Production") {
+            steps { approve() }
+		}
+
+	}
+}
+
+def deploy(environment) {
+	sh "pwd"
+	sh "whoami"
+	sh "hostname"
+	sh "ansible-playbook -i Jenkins/Inventory/moodle.INI ./moodle-dev-apache-integration.yml --vault-password-file=~/HiDALGO/VaultPassword/moodle_vault.txt"
+}
+
+def approve() {
+
+        try {
+                timeout(time:1, unit:'DAYS') {
+                        input('Do you want to deploy to live?')
+                }
+        } catch(err) {
+                def user = err.getCauses()[0].getUser()
+                if('SYSTEM' == user.toString()) { // SYSTEM means timeout.
+                        didTimeout = true
+                } else {
+                        userInput = false
+                        echo "Aborted by: [${user}]"
+                }
+        }
+
+}
+
+def runUAT(hostname, protocol) {
+	sh "Tests/ping_moodle.sh ${hostname} ${protocol}"
+}

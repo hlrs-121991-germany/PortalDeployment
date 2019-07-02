@@ -1,0 +1,147 @@
+--- 
+- name: Create "Matchmaking" directory
+  file:
+    dest: "{{source_location}}"
+    state: directory
+    mode: '0755'
+
+- name: Change directory to the source code location
+  shell:
+    cmd: ls
+    chdir: "{{source_location}}"
+  ignore_errors: yes
+
+- name: Kill gunicorn before installing
+  shell: pkill gunicorn
+  ignore_errors: yes
+
+- name: Installing required packages
+  yum: name={{item}} state=present
+  with_items:
+   - python3-pip
+   - python-pip
+   - expect
+   
+- name: Install git
+  apt:
+    name: git
+    state: present
+
+- name: Install Gunicorn
+  apt:
+    name: gunicorn
+    state: present
+
+- name: Install list of dependency
+  apt: name={{item}} state=present
+  with_items:
+    - postgresql
+    - postgresql-contrib
+    - libpq-dev
+
+- name: Clean git repos directory
+  file:
+          state: absent
+          path: "{{source_location}}"
+
+- name: Checkout matchmaking git repos
+  git:
+    repo: https://{{git_username}}:{{git_password}}@scm.projects.hlrs.de/authscm/hidalgo-ro-dep/git/hid-portal-be/matchmaking-demo.git
+    dest: "{{source_location}}"
+    version: dev-class-view-py36
+    force: yes
+    clone: yes
+
+- name: Installing python libraries using requirements file for python3
+  pip:
+    requirements: requirements.txt
+    chdir: "{{source_location}}"
+    executable: pip3
+
+- name: Installing python libraries from python2 for ansible modules (Postgresql Database)
+  pip:
+    name:
+      - psycopg2>=2.8.3
+    executable: pip2
+
+- name: Remove database Sqlite3
+  command: rm db.sqlite3
+  args:
+    chdir: "{{source_location}}"
+  ignore_errors: yes
+
+- name: Remove a new database with name "matchmaking_rest"
+  become:      true
+  become_user: postgres
+  postgresql_db:
+    name: matchmaking_rest
+    state: absent
+  ignore_errors: yes
+
+- name: Create a new database with name "matchmaking_rest"
+  become:      true
+  become_user: postgres
+  postgresql_db:
+    name: matchmaking_rest
+    conn_limit: "300"
+
+- name: Create an User and give permission for "matchmaking_rest"
+  become:      true
+  become_user: postgres
+  postgresql_user:
+    db: matchmaking_rest
+    name: hpcdraja
+    password: hpcdraja
+    conn_limit: "300"
+
+
+- name: Migrate data in Django
+  command: ./external_tools/data/data_migrate.sh
+  args:
+    chdir: "{{source_location}}"
+  ignore_errors: yes
+
+- name: super user existed?
+  command: echo "from django.contrib.auth import get_user_model; User = get_user_model(); print(User.objects.filter(username='{{admin_username}}').count()>0)" | python3 ./manage.py shell
+  args:
+    chdir: "{{source_location}}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{django_settings}}"
+  register: superuser_existed
+
+- name: Manage Django and create superuser 
+  django_manage:
+    command: "createsuperuser --noinput --username={{admin_username}} --email=hpdraja@hlrs.de"
+    app_path: "{{source_location}}"
+  when: not superuser_existed
+
+- name: Change password tricks
+  template:
+          src: changepassword.sh.j2
+          dest: "{{ source_location }}/changepassword.sh"
+          mode: 0755
+  
+- name: Change password
+  command: "{{source_location}}/changepassword.sh"
+  args:
+    chdir: "{{source_location}}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "{{django_settings}}"
+
+- name: remove changepassword.sh
+  file: path="{{source_location}}/changepassword.sh" state=absent
+
+- name: Gunicorn to run the server in background
+  shell: gunicorn -w 8 --bind 0.0.0.0:80 matchmaking_rest.wsgi &> matchmaking_rest.log &
+  args:
+    chdir: "{{source_location}}"
+    executable: /bin/bash
+  async: 2592000
+  poll: 0
+  ignore_errors: yes
+
+- name: Import data in Django
+  command: ./external_tools/data/import_data_curl_2.sh http 172.18.18.8 80
+  args:
+    chdir: "{{source_location}}"
+  ignore_errors: yes

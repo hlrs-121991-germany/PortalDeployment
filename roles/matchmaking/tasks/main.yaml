@@ -1,0 +1,111 @@
+--- 
+- name: Create "Matchmaking" directory
+  file:
+    dest: "{{source_location}}"
+    state: directory
+    mode: '0755'
+
+- name: Change directory to the source code location
+  shell:
+    cmd: ls
+    chdir: "{{source_location}}"
+  ignore_errors: yes
+
+- name: Kill gunicorn before installing
+  shell: pkill gunicorn
+  ignore_errors: yes
+
+- name: Installing required packages
+  yum: name={{item}} state=present
+  with_items:
+   - python
+   - python-pip
+   - python3-pip
+   
+- name: Install git
+  apt:
+    name: git
+    state: present
+
+- name: Install Gunicorn
+  apt:
+    name: gunicorn
+    state: present
+
+- name: Install list of dependency
+  apt: name={{item}} state=present
+  with_items:
+    - postgresql
+    - postgresql-contrib
+    - libpq-dev
+
+- name: Checkout matchmaking git repos
+  git:
+    repo: https://github.com/hlrs-121991-germany/matchmaking_rest_user.git
+    dest: "{{source_location}}"
+    force: yes
+    clone: yes
+
+- name: Installing python libraries using requirements file for python2
+  pip:
+    requirements: requirements.txt
+    chdir: "{{source_location}}"
+    executable: pip
+
+- name: Installing python libraries using requirements file for python3
+  pip:
+    requirements: requirements.txt
+    chdir: "{{source_location}}"
+    executable: pip3
+
+- name: Remove database Sqlite3
+  command: rm db.sqlite3
+  args:
+    chdir: "{{source_location}}"
+  ignore_errors: yes
+
+- name: Remove a new database with name "matchmaking_rest"
+  become:      true
+  become_user: postgres
+  postgresql_db:
+    name: matchmaking_rest
+    state: absent
+  ignore_errors: yes
+
+- name: Create a new database with name "matchmaking_rest"
+  become:      true
+  become_user: postgres
+  postgresql_db:
+    name: matchmaking_rest
+    conn_limit: "300"
+
+- name: Create an User and give permission for "matchmaking_rest"
+  become:      true
+  become_user: postgres
+  postgresql_user:
+    db: matchmaking_rest
+    name: hpcdraja
+    password: hpcdraja
+    conn_limit: "300"
+
+
+- name: Create Superuser and Migrate data in Django
+  command: ./external_tools/data/data_migrate.sh
+  args:
+    chdir: "{{source_location}}"
+  ignore_errors: yes
+
+- name: Gunicorn to run the server in background
+  shell: /usr/bin/gunicorn -w 8  --bind 0.0.0.0:80 matchmaking_rest.wsgi &> matchmaking_rest.log &
+  args:
+    chdir: "{{source_location}}"
+    executable: /bin/bash
+  async: 2592000
+  poll: 0
+  ignore_errors: yes
+
+- name: Import data in Django
+  command: ./external_tools/data/import_data_curl.sh http 172.18.18.8 80
+  args:
+    chdir: "{{source_location}}"
+  ignore_errors: yes

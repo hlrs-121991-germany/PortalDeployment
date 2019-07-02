@@ -1,0 +1,54 @@
+#!/usr/bin/groovy
+
+pipeline {
+    agent {label 'master'}
+
+    options {
+        disableConcurrentBuilds()
+    }
+
+    environment {
+	PYTHONPATH = "${WORKSPACE}/"
+    }
+
+    stages {
+        stage("Deploy - Integration") {
+		steps { deploy('integration') }
+	}
+	stage("Test - Integration") {
+		steps { runUAT("172.18.18.8", "http") }
+	}
+        stage("Approve for Production") {
+		steps { approve() }
+	}
+    }
+}
+
+def deploy(environment) {
+	sh "pwd"
+	sh "whoami"
+	sh "hostname"
+	sh "ansible-playbook -i Jenkins/Inventory/matchmaking.INI ./matchmaking-production-py36.yml -e 'ansible_python_interpreter=/usr/bin/python3'"
+}
+
+def runUAT(hostname, protocol) {
+	sh "Tests/ping_matchmaking.sh ${hostname} ${protocol}"
+}
+
+def approve() {
+
+        try {
+                timeout(time:1, unit:'DAYS') {
+                        input('Do you want to deploy to live?')
+                }
+        } catch(err) {
+                def user = err.getCauses()[0].getUser()
+                if('SYSTEM' == user.toString()) { // SYSTEM means timeout.
+                        didTimeout = true
+                } else {
+                        userInput = false
+                        echo "Aborted by: [${user}]"
+                }
+        }
+
+}

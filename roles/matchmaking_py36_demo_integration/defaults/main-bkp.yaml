@@ -1,0 +1,9 @@
+---
+  home_directory: "/home/hpc"
+  source_location: "{{home_directory}}/matchmaking"
+  git_username: "hpcdinesh"
+  git_password: "PASSWORD"
+  admin_username: "admin"
+  admin_password: "PASSWORD"
+  admin_email: "hp@hlrs.de"
+  django_settings: matchmaking_rest.settings

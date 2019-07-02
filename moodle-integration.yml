@@ -1,0 +1,22 @@
+---
+- hosts: all
+  become: yes
+  become_method: sudo
+  roles:
+    # - test_role
+    - upload_public_key
+    - fix_sources
+    - mysql
+    # - { role: shibboleth-sp,
+    #     tags: ['shib'],
+    #     www_host: "shibboleth.coegss.hlrs.de",
+    #     www_proto: "https",
+    #     shibboleth_idp_host: "idp.coegss.hlrs.de",
+    #     ip1: "141.58.0.69",
+
+    #     }
+    - { role: moodle-apache-integration,
+        tags: ['deb'],
+
+         }
+
