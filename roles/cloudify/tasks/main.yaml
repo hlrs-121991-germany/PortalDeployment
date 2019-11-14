@@ -63,11 +63,17 @@
 - name: cfy_manager create-external-certs
   command: cfy_manager create-external-certs --private-ip '{{ vm_private_ip }}' --public-ip '{{ vm_public_ip }}'
 
-- name: Copy new certificate
-  command: cp /etc/letsencrypt/live/{{www_host}}/fullchain.pem /etc/cloudify/ssl/cloudify_external_cert.pem
+- name: Remove cloudify default certificate
+  command: rm /etc/cloudify/ssl/cloudify_external_cert.pem
 
-- name: Copy new certificate key
-  command: cp /etc/letsencrypt/live/{{www_host}}/privkey.pem /etc/cloudify/ssl/cloudify_external_key.pem
+- name: Remove cloudify default certificate
+  command: rm /etc/cloudify/ssl/cloudify_external_key.pem
+
+- name: Soft link new certificate with the cloudify certificate
+  command: ln -s /etc/letsencrypt/live/{{www_host}}/fullchain.pem /etc/cloudify/ssl/cloudify_external_cert.pem
+
+- name: Soft link new certificate key with the cloudify certificate key
+  command: ln -s /etc/letsencrypt/live/{{www_host}}/privkey.pem /etc/cloudify/ssl/cloudify_external_key.pem
 
 - name: Setup ssl in /etc/cloudify/config.yaml
   replace:
@@ -91,4 +97,12 @@
   lineinfile:
     path: /etc/hosts
     line: '{{ vm_public_ip }}   {{ server_name }}'
-   # insertafter: .*{{ vm_name }}
+    # insertafter: .*{{ vm_name }}
+
+- name: Add letsencrypt cronjob for renew in every week
+  cron:
+    name: letsencrypt_renewal
+    weekday: "0"
+    hour: "23"
+    minute: "45"
+    job: "letsencrypt renew; cfy_manager restart --force;"

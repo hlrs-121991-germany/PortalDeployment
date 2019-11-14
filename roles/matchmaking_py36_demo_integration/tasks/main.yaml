@@ -141,7 +141,7 @@
   ignore_errors: yes
 
 - name: Import data in Django
-  command: ./external_tools/data/import_data_curl_2.sh http 172.18.18.8 80
+  command: ./external_tools/data/import_data_curl_2.sh http sophora-89.man.poznan.pl 80
   args:
     chdir: "{{source_location}}"
   ignore_errors: yes

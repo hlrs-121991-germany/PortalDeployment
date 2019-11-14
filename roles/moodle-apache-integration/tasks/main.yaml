@@ -218,3 +218,12 @@
   service:
     name: apache2
     state: restarted
+
+- name: Add letsencrypt cronjob for renew in every week
+  cron:
+    name: letsencrypt_renewal
+    weekday: "0"
+    hour: "23"
+    minute: "45"
+    job: "letsencrypt renew; systemctl restart apache2;"
+

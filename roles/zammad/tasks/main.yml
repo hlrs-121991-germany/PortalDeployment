@@ -1,0 +1,142 @@
+---
+- name: Update apt repositories cache
+  apt:
+    update_cache: yes
+  changed_when: false
+  when: ansible_pkg_mgr == "apt"
+
+- name: Install https transport (needed for APT keys)
+  apt:
+    name: apt-transport-https
+  when: ansible_pkg_mgr == "apt"
+
+- name: Add Artifacts elastic GPG Key for elasticsearch
+  apt_key:
+    url: "https://artifacts.elastic.co/GPG-KEY-elasticsearch"
+  when: ansible_pkg_mgr == "apt"
+
+- name: Add apt repository for Elasticsearch
+  apt_repository:
+    repo: deb https://artifacts.elastic.co/packages/7.x/apt stable main
+  when: ansible_pkg_mgr == "apt"
+
+- name: Add packager.io GPG key for Zammad
+  apt_key:
+    url: "https://dl.packager.io/srv/zammad/zammad/key"
+  when: ansible_pkg_mgr == "apt"
+
+- name: Add apt repository for zammad
+  apt_repository:
+    repo: deb https://dl.packager.io/srv/deb/zammad/zammad/stable/ubuntu 18.04 main
+  when: ansible_pkg_mgr == "apt"
+
+- name: openjdk-8-jre
+  apt:
+    name:
+      - openjdk-8-jre
+  when: ansible_pkg_mgr == "apt"
+
+- name: Install elasticsearch
+  apt:
+    name:
+      - elasticsearch
+  when: ansible_pkg_mgr == "apt"
+
+- name: ensuring elasticsearch is started
+  service:
+    name: elasticsearch
+    state: started
+  tags:
+    - elasticsearch
+
+- name: Install zammad
+  apt:
+    name:
+      - zammad
+  when: ansible_pkg_mgr == "apt"
+
+- name: config elasticsearch for zammad
+  command: zammad run rails r "Setting.set('es_url', 'http://127.0.0.1:9200')"
+  tags:
+    - elasticsearch
+
+- name: remove ingest plugin from elasticsearch
+  command: '/usr/share/elasticsearch/bin/elasticsearch-plugin remove ingest-attachment'
+  ignore_errors: yes
+  tags:
+    - elasticsearch
+
+- name: Restart Elasticsearch service
+  service:
+    name: elasticsearch
+    state: restarted
+
+- name: install ingest plugin for elasticsearch 2.6.x
+  command: '/usr/share/elasticsearch/bin/elasticsearch-plugin install -b ingest-attachment'
+  tags:
+    - elasticsearch
+
+- name: Restart Elasticsearch service
+  service:
+    name: elasticsearch
+    state: restarted
+
+- name: rebuild searchindex
+  command: 'zammad run rake searchindex:rebuild'
+  tags:
+    - elasticsearch
+
+- name: Install Nginx
+  apt:
+    name:
+      - nginx
+  when: ansible_pkg_mgr == "apt"
+
+- name: Disable default zammad nginx config
+  file:
+    path: /etc/nginx/sites-enabled/zammad.conf
+    state: absent
+
+- name: Install letsencrypt
+  apt:
+    name:
+      - letsencrypt
+  when: ansible_pkg_mgr == "apt"
+
+- name: Install nginx site for letsencrypt requests
+  template: src=templates/nginx-http.j2 dest=/etc/nginx/sites-available/http-{{ zammad_domain }}
+
+- name: Enable letsencrypt requests site config
+  file: src=/etc/nginx/sites-available/http-{{ zammad_domain }} dest=/etc/nginx/sites-enabled/http-{{ zammad_domain }} state=link
+
+- name: Change the Icon of Zammad and Use Hidalgo
+  template: src=templates/icons.svg dest=/opt/zammad/public/assets/images/icons.svg
+
+- name: Reload nginx to activate letsencrypt site
+  service: name=nginx state=reloaded
+
+- name: Create letsencrypt directory
+  file: name=/var/www/letsencrypt state=directory
+
+- name: Create letsencrypt certificate
+  shell: letsencrypt certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ zammad_domain }}
+  args:
+    creates: /etc/letsencrypt/live/{{ zammad_domain }}
+  notify:
+    - Reload Nginx
+
+- name: Add zammad site config
+  template: src=nginx-secure.j2 dest=/etc/nginx/sites-available/{{ zammad_domain }} owner=root group=root
+  notify:
+    - Reload Nginx
+
+- name: Enable zammad site config
+  file: src=/etc/nginx/sites-available/{{ zammad_domain }} dest=/etc/nginx/sites-enabled/{{ zammad_domain }} state=link
+  notify:
+    - Reload Nginx
+
+- name: Add letsencrypt cronjob for renew
+  cron:
+    name: letsencrypt_renewal
+    special_time: weekly
+    job: "letsencrypt renew --webroot -w /var/www/letsencrypt; systemctl restart nginx"

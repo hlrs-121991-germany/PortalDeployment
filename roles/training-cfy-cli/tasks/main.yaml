@@ -1,0 +1,48 @@
+--- 
+- include_vars: users.yaml
+
+- name: Installing required packages
+  apt: name={{item}} state=present
+  with_items:
+   - wget 
+   #   - python-setuptools 
+   #   - python-backports.ssl-match-hostname 
+   #   - python-backports
+
+- name: Installing Cloudify CLI
+  apt:
+    deb: '{{ repo_cli_url }}'
+
+- name: Setup Cloudify CLI
+  command: cfy profiles use --ssl {{ www_host }} -u {{ cloudify_username }} -p {{ cloudify_password }} -t default_tenant
+  ignore_errors: yes
+
+  #- name: Create random password for new users and store in the VM
+
+  #- name: Add new users in the VM
+  #  vars:
+    #    created_password: "{{ lookup('password', '/tmp/ans_file chars=ascii_letters,digits,hexdigits,punctuation') }}"
+    #    verbosity: 2
+    #  user:
+      #    name: "{{ item.userName }}"
+      #    password: "{{ created_password | password_hash('sha512') }}"
+      #    shell: /bin/bash
+      #    update_password: on_create
+      #  with_items: "{{ users }}"
+
+      #      - name: Create new users in the VM
+
+- name: Add new users in the VM
+  user:
+    name: "{{ item.userName }}"
+    password: "{{ item.password | password_hash('sha512') }}"
+    shell: /bin/bash
+    update_password: on_create
+  with_items: "{{ users }}"
+
+- name: Setup Cloudify CLI
+  command: cfy profiles use --ssl {{ www_host }} -u {{ cloudify_username }} -p {{ cloudify_password }} -t default_tenant
+  ignore_errors: yes
+  become: yes
+  become_user: "{{ item.userName }}"
+  with_items: "{{ users }}"
