@@ -1,6 +1,6 @@
-[submodule "roles/ansible-role-nginx"]
-	path = roles/ansible-role-nginx
-	url = https://github.com/f403/ansible-role-nginx.git
-[submodule "roles/ansible-role-php"]
-	path = roles/ansible-role-php
-	url = https://github.com/f403/ansible-role-php.git
+#[submodule "roles/ansible-role-nginx"]
+#	path = roles/ansible-role-nginx
+#	url = https://github.com/f403/ansible-role-nginx.git
+#[submodule "roles/ansible-role-php"]
+#	path = roles/ansible-role-php
+#	url = https://github.com/f403/ansible-role-php.git
